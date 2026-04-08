@@ -36,7 +36,7 @@ max_quote = st.sidebar.slider("Maximale Quote", 1.15, 1.50, 1.35, 0.01)
 min_quote = st.sidebar.slider("Minimale Quote", 1.01, 1.25, 1.15, 0.01)
 ticket_groesse = st.sidebar.slider("🎟️ Wunsch-Kombi-Größe", 2, 10, 5, 1)
 
-# --- NEU: DER ZEIT-FILTER ---
+# --- DER ZEIT-FILTER ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("⏳ Zeit-Filter")
 zeitfenster_stunden = st.sidebar.slider("Max. Zeit bis Anpfiff (Stunden)", 12, 72, 24, 12, help="Filtert Spiele heraus, die zu weit in der Zukunft liegen.")
@@ -84,7 +84,6 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
     if not api_key:
         st.error("⚠️ Bitte API-Key links im Menü eintragen!")
     else:
-        # Zeitgrenze für den Scan berechnen
         jetzt = datetime.now(timezone.utc)
         max_zeit = jetzt + timedelta(hours=zeitfenster_stunden)
         
@@ -102,50 +101,14 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
                     daten = scan_sportart(sport, api_key, buchmacher)
                     
                     for spiel in daten:
-                        # Zeit-Check (Ist das Spiel in unserem Fenster?)
                         startzeit_str = spiel.get('commence_time')
                         if startzeit_str:
                             try:
                                 startzeit = datetime.fromisoformat(startzeit_str.replace('Z', '+00:00'))
                                 if startzeit > max_zeit:
-                                    continue # Zu weit in der Zukunft -> ignorieren
+                                    continue
                             except:
                                 pass 
                         
                         if 'bookmakers' not in spiel: continue
-                        team_a = spiel.get('home_team', 'Unbekannt')
-                        team_b = spiel.get('away_team', 'Unbekannt')
-                        spiel_name = f"{team_a} vs {team_b}"
-                        
-                        for bm in spiel['bookmakers']:
-                            if buchmacher != "alle" and bm.get('key') != buchmacher:
-                                continue
-                                
-                            buchmacher_name = bm.get('title', 'Unbekannt')
-                            
-                            for markt in bm.get('markets', []):
-                                markt_name = markt['key'].upper() 
-                                
-                                for quote in markt.get('outcomes', []):
-                                    if min_quote <= quote['price'] <= max_quote:
-                                        
-                                        tipp_text = f"{quote.get('name', '')} {quote.get('point', '')}".strip()
-                                        einzigartige_id = f"{spiel_name}_{markt_name}_{tipp_text}"
-                                        
-                                        if einzigartige_id not in gesehene_wetten_id:
-                                            if markt_name == "H2H": anzeige_markt = "🏆 Sieger"
-                                            elif markt_name == "SPREADS": anzeige_markt = "⚖️ Handicap"
-                                            elif markt_name == "TOTALS": anzeige_markt = "🎯 Über/Unter"
-                                            else: anzeige_markt = markt_name
-                                            
-                                            anzeige_datum = "Unbekannt"
-                                            if startzeit_str:
-                                                try:
-                                                    anzeige_datum = startzeit.strftime("%d.%m. %H:%M")
-                                                except: pass
-                                            
-                                            gefundene_wetten.append({
-                                                "sport": sport.replace('soccer_', '').replace('tennis_', '').replace('basketball_', '').upper(),
-                                                "spiel": spiel_name,
-                                                "zeit": anzeige_datum,
-                                                "markt": anzeige
+                        team_a = spiel.get
