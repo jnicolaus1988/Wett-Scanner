@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+from datetime import datetime, timedelta, timezone
 
 st.set_page_config(page_title="KI Pro-Scanner", page_icon="🎱", layout="centered")
 st.title("🎱 KI Pro-Scanner (Top Bookies)")
@@ -24,7 +25,6 @@ st.sidebar.header("⚙️ Ticket-Parameter")
 api_key = st.sidebar.text_input("🔑 API Key", type="password")
 
 st.sidebar.markdown("---")
-# NEU: "Alle" hinzugefügt für den Transparenz-Test
 buchmacher = st.sidebar.radio(
     "🏦 Ziel-Buchmacher:",
     ("bet365", "bwin", "unibet", "alle"),
@@ -35,6 +35,11 @@ st.sidebar.markdown("---")
 max_quote = st.sidebar.slider("Maximale Quote", 1.15, 1.50, 1.35, 0.01)
 min_quote = st.sidebar.slider("Minimale Quote", 1.01, 1.25, 1.15, 0.01)
 ticket_groesse = st.sidebar.slider("🎟️ Wunsch-Kombi-Größe", 2, 10, 5, 1)
+
+# --- NEU: DER ZEIT-FILTER ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("⏳ Zeit-Filter")
+zeitfenster_stunden = st.sidebar.slider("Max. Zeit bis Anpfiff (Stunden)", 12, 72, 24, 12, help="Filtert Spiele heraus, die zu weit in der Zukunft liegen.")
 
 # --- CREDIT COUNTER ---
 st.sidebar.markdown("---")
@@ -58,7 +63,6 @@ def hole_aktive_vip_sports(key):
         return []
 
 def scan_sportart(sport, key, bookie):
-    # FIX: Regionen auf eu UND uk gesetzt!
     if bookie == "alle":
         url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?apiKey={key}&regions=eu,uk&markets=h2h,spreads,totals"
     else:
@@ -80,13 +84,17 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
     if not api_key:
         st.error("⚠️ Bitte API-Key links im Menü eintragen!")
     else:
+        # Zeitgrenze für den Scan berechnen
+        jetzt = datetime.now(timezone.utc)
+        max_zeit = jetzt + timedelta(hours=zeitfenster_stunden)
+        
         with st.spinner("Prüfe aktive Märkte..."):
             aktive_vips = hole_aktive_vip_sports(api_key)
             
         if not aktive_vips:
             st.warning("Aktuell läuft keiner der globalen Top-Märkte. Versuche es später wieder.")
         else:
-            with st.spinner(f"Analysiere Quoten für {len(aktive_vips)} Sportarten..."):
+            with st.spinner(f"Analysiere Quoten für die nächsten {zeitfenster_stunden} Stunden..."):
                 gefundene_wetten = []
                 gesehene_wetten_id = set()
                 
@@ -94,13 +102,22 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
                     daten = scan_sportart(sport, api_key, buchmacher)
                     
                     for spiel in daten:
+                        # Zeit-Check (Ist das Spiel in unserem Fenster?)
+                        startzeit_str = spiel.get('commence_time')
+                        if startzeit_str:
+                            try:
+                                startzeit = datetime.fromisoformat(startzeit_str.replace('Z', '+00:00'))
+                                if startzeit > max_zeit:
+                                    continue # Zu weit in der Zukunft -> ignorieren
+                            except:
+                                pass 
+                        
                         if 'bookmakers' not in spiel: continue
                         team_a = spiel.get('home_team', 'Unbekannt')
                         team_b = spiel.get('away_team', 'Unbekannt')
                         spiel_name = f"{team_a} vs {team_b}"
                         
                         for bm in spiel['bookmakers']:
-                            # Überspringen, wenn wir einen bestimmten Bookie wollen, aber das der falsche ist
                             if buchmacher != "alle" and bm.get('key') != buchmacher:
                                 continue
                                 
@@ -121,35 +138,14 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
                                             elif markt_name == "TOTALS": anzeige_markt = "🎯 Über/Unter"
                                             else: anzeige_markt = markt_name
                                             
+                                            anzeige_datum = "Unbekannt"
+                                            if startzeit_str:
+                                                try:
+                                                    anzeige_datum = startzeit.strftime("%d.%m. %H:%M")
+                                                except: pass
+                                            
                                             gefundene_wetten.append({
                                                 "sport": sport.replace('soccer_', '').replace('tennis_', '').replace('basketball_', '').upper(),
                                                 "spiel": spiel_name,
-                                                "markt": anzeige_markt,
-                                                "tipp": tipp_text,
-                                                "quote": quote['price'],
-                                                "bookie_name": buchmacher_name
-                                            })
-                                            gesehene_wetten_id.add(einzigartige_id)
-
-                st.success("✅ Analyse abgeschlossen!")
-                
-                # --- DAS TICKET (NEUE LOGIK) ---
-                if len(gefundene_wetten) > 0:
-                    gefundene_wetten = sorted(gefundene_wetten, key=lambda x: x['quote'])
-                    top_x = gefundene_wetten[:ticket_groesse]
-                    gesamtquote = 1.0
-                    
-                    st.markdown(f"### 🎫 Dein Ticket ({len(top_x)} Bausteine)")
-                    
-                    # FIX: Wenn weniger gefunden wurden, als gewünscht
-                    if len(gefundene_wetten) < ticket_groesse:
-                        st.warning(f"Achtung: Du wolltest {ticket_groesse} Spiele, aber der Markt gibt bei deinen strengen Vorgaben gerade nur {len(gefundene_wetten)} her. Hier ist das Maximum, das wir herausholen konnten:")
-                    
-                    for i, wette in enumerate(top_x):
-                        bookie_info = f" *(Quelle: {wette['bookie_name']})*" if buchmacher == "alle" else ""
-                        st.info(f"**Baustein {i+1} ({wette['sport']}) | {wette['markt']}**\n\n**{wette['spiel']}**\n\n👉 **Tipp:** {wette['tipp']} | **Quote: {wette['quote']}**{bookie_info}")
-                        gesamtquote *= wette['quote']
-                        
-                    st.success(f"🔥 **GESAMTQUOTE (KOMBI): {gesamtquote:.2f}**")
-                else:
-                    st.error("Absolut keine Spiele in diesem Quotenbereich gefunden. Der Markt (oder dieser Buchmacher) ist für heute komplett leergefegt.")
+                                                "zeit": anzeige_datum,
+                                                "markt": anzeige
