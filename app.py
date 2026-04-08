@@ -1,9 +1,15 @@
 import streamlit as st
 import requests
 
-st.set_page_config(page_title="Tipico One-Click Scanner", page_icon="🎱", layout="centered")
-st.title("🎱 Tipico One-Click Scanner")
-st.markdown("Ein Knopfdruck. Die KI scannt automatisch die Top-Märkte – **exklusiv für Tipico**.")
+st.set_page_config(page_title="KI Pro-Scanner", page_icon="🎱", layout="centered")
+st.title("🎱 KI Pro-Scanner (Top 3 Bookies)")
+st.markdown("Dein vollautomatisches System für Kombiwetten. Nutze primär Bet365.")
+
+# --- DAS GEDÄCHTNIS (Zero-Cost Credit Tracking) ---
+if 'api_used' not in st.session_state:
+    st.session_state.api_used = "?"
+if 'api_remaining' not in st.session_state:
+    st.session_state.api_remaining = "?"
 
 # --- DIE VIP-LISTE ---
 VIP_SPORTS = [
@@ -15,15 +21,29 @@ VIP_SPORTS = [
 ]
 
 # --- EINSTELLUNGEN ---
-st.sidebar.header("⚙️ Parameter")
+st.sidebar.header("⚙️ Ticket-Parameter")
 api_key = st.sidebar.text_input("🔑 API Key", type="password")
+
+st.sidebar.markdown("---")
+# DEINE TOP 3 BUCHMACHER (Fest codiert)
+buchmacher = st.sidebar.radio(
+    "🏦 Ziel-Buchmacher:",
+    ("bet365", "bwin", "unibet"),
+    format_func=lambda x: {"bet365": "1. Bet365 (Primär)", "bwin": "2. Bwin (Backup)", "unibet": "3. Unibet (Spezialist)"}[x]
+)
 
 st.sidebar.markdown("---")
 max_quote = st.sidebar.slider("Maximale Quote", 1.15, 1.50, 1.35, 0.01)
 min_quote = st.sidebar.slider("Minimale Quote", 1.01, 1.25, 1.15, 0.01)
-
-st.sidebar.markdown("---")
 ticket_groesse = st.sidebar.slider("🎟️ Kombi-Größe", 2, 10, 5, 1)
+
+# --- DER ZERO-COST CREDIT COUNTER ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("API Guthaben (Letzter Stand)")
+col1, col2 = st.sidebar.columns(2)
+col1.metric("Verbraucht", f"{st.session_state.api_used} / 500")
+col2.metric("Übrig", st.session_state.api_remaining)
+st.sidebar.caption("Aktualisiert sich automatisch bei jedem echten Scan.")
 
 # --- ENGINE ---
 def hole_aktive_vip_sports(key):
@@ -31,47 +51,44 @@ def hole_aktive_vip_sports(key):
     try:
         response = requests.get(url)
         if response.status_code == 200:
-            used = response.headers.get('x-requests-used', 'Unbekannt')
-            remaining = response.headers.get('x-requests-remaining', 'Unbekannt')
+            st.session_state.api_used = response.headers.get('x-requests-used', st.session_state.api_used)
+            st.session_state.api_remaining = response.headers.get('x-requests-remaining', st.session_state.api_remaining)
             alle_aktiven = [sport['key'] for sport in response.json() if sport['active']]
-            return [s for s in VIP_SPORTS if s in alle_aktiven], used, remaining
-        return [], 0, 0
+            return [s for s in VIP_SPORTS if s in alle_aktiven]
+        return []
     except:
-        return [], 0, 0
+        return []
 
-def scan_sportart(sport, key):
-    # API-UPDATE: Wir fordern jetzt explizit nur die Daten von Tipico an (&bookmakers=tipico)
-    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?apiKey={key}&regions=eu&bookmakers=tipico&markets=h2h,spreads,totals"
+def scan_sportart(sport, key, bookie):
+    url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?apiKey={key}&regions=eu&bookmakers={bookie}&markets=h2h,spreads,totals"
     try:
         response = requests.get(url)
         if response.status_code == 200:
-            used = response.headers.get('x-requests-used', 'Unbekannt')
-            remaining = response.headers.get('x-requests-remaining', 'Unbekannt')
-            return response.json(), used, remaining
-        return [], 0, 0
+            st.session_state.api_used = response.headers.get('x-requests-used', st.session_state.api_used)
+            st.session_state.api_remaining = response.headers.get('x-requests-remaining', st.session_state.api_remaining)
+            return response.json()
+        return []
     except:
-        return [], 0, 0
+        return []
 
 # --- DER MAGISCHE KNOPF ---
 st.markdown("---")
-if st.button("🚀 TIPICO MAGIC SCAN STARTEN", use_container_width=True):
+if st.button(f"🚀 TICKET GENERIEREN ({buchmacher.upper()})", use_container_width=True):
     if not api_key:
         st.error("⚠️ Bitte API-Key links im Menü eintragen!")
     else:
-        with st.spinner("Prüfe aktive Märkte und API-Limit..."):
-            aktive_vips, letzer_verbrauch, letztes_limit = hole_aktive_vip_sports(api_key)
+        with st.spinner("Prüfe aktive Märkte..."):
+            aktive_vips = hole_aktive_vip_sports(api_key)
             
         if not aktive_vips:
             st.warning("Aktuell läuft keiner der globalen Top-Märkte. Versuche es später wieder.")
         else:
-            with st.spinner(f"Analysiere Tipico-Quoten für {len(aktive_vips)} Sportarten..."):
+            with st.spinner(f"Analysiere Quoten bei {buchmacher.upper()} für {len(aktive_vips)} Sportarten..."):
                 gefundene_wetten = []
                 gesehene_wetten_id = set()
                 
                 for sport in aktive_vips:
-                    daten, used, remaining = scan_sportart(sport, api_key)
-                    letzer_verbrauch = used 
-                    letztes_limit = remaining
+                    daten = scan_sportart(sport, api_key, buchmacher)
                     
                     for spiel in daten:
                         if 'bookmakers' not in spiel: continue
@@ -79,12 +96,11 @@ if st.button("🚀 TIPICO MAGIC SCAN STARTEN", use_container_width=True):
                         team_b = spiel.get('away_team', 'Unbekannt')
                         spiel_name = f"{team_a} vs {team_b}"
                         
-                        for buchmacher in spiel['bookmakers']:
-                            # SICHERHEITSFILTER: Wir lassen im Code wirklich nur Tipico durch
-                            if buchmacher.get('key') != 'tipico' and buchmacher.get('title') != 'Tipico':
+                        for bm in spiel['bookmakers']:
+                            if bm.get('key') != buchmacher:
                                 continue
                             
-                            for markt in buchmacher.get('markets', []):
+                            for markt in bm.get('markets', []):
                                 markt_name = markt['key'].upper() 
                                 
                                 for quote in markt.get('outcomes', []):
@@ -108,10 +124,10 @@ if st.button("🚀 TIPICO MAGIC SCAN STARTEN", use_container_width=True):
                                             })
                                             gesehene_wetten_id.add(einzigartige_id)
 
-                st.success("✅ Exklusive Tipico-Analyse abgeschlossen!")
+                st.success("✅ Analyse abgeschlossen!")
                 
                 # --- DAS TICKET ---
-                st.markdown(f"### 🎫 Dein Tipico {ticket_groesse}er-Kombi-Ticket")
+                st.markdown(f"### 🎫 Dein KI-Ticket für heute")
                 if len(gefundene_wetten) >= ticket_groesse:
                     gefundene_wetten = sorted(gefundene_wetten, key=lambda x: x['quote'])
                     top_x = gefundene_wetten[:ticket_groesse]
@@ -122,12 +138,6 @@ if st.button("🚀 TIPICO MAGIC SCAN STARTEN", use_container_width=True):
                         gesamtquote *= wette['quote']
                         
                     st.success(f"🔥 **GESAMTQUOTE (KOMBI): {gesamtquote:.2f}**")
+                    st.markdown(f"*Öffne jetzt {buchmacher.upper()} und baue das Ticket exakt so nach.*")
                 else:
-                    st.warning(f"Nicht genügend Spiele gefunden. Bei Tipico gibt es gerade nur {len(gefundene_wetten)} Wetten in deinem eingestellten Quoten-Bereich.")
-
-                # --- DER API-COUNTER ---
-                st.markdown("---")
-                col1, col2 = st.columns(2)
-                col1.metric("Verbrauchte API-Credits", f"{letzer_verbrauch} / 500")
-                col2.metric("Verbleibende Credits", letztes_limit)
-                st.caption("Dein Guthaben setzt sich am 1. jedes Monats automatisch wieder auf 500 zurück.")
+                    st.warning(f"Nicht genügend Spiele gefunden. {buchmacher.upper()} liefert gerade nur {len(gefundene_wetten)} Ergebnisse in deinen Risiko-Parametern. Wechsle im Menü auf dein Backup (z.B. Bwin).")
