@@ -3,207 +3,102 @@ import requests
 from datetime import datetime, timedelta, timezone
 
 st.set_page_config(page_title="KI Pro-Scanner", page_icon="🎱", layout="centered")
-st.title("🎱 KI Pro-Scanner (Top Bookies)")
-st.markdown("Dein vollautomatisches System für Kombiwetten. Regionen: EU & UK.")
+st.title("🎱 KI Pro-Scanner (Ultimate)")
 
-# --- DAS GEDÄCHTNIS ---
-if 'api_used' not in st.session_state:
-    st.session_state.api_used = "?"
-if 'api_remaining' not in st.session_state:
-    st.session_state.api_remaining = "?"
+# --- GEDÄCHTNIS ---
+if 'api_used' not in st.session_state: st.session_state.api_used = "?"
+if 'api_remaining' not in st.session_state: st.session_state.api_remaining = "?"
 
-VIP_SPORTS = [
-    "soccer_uefa_champs_league", "soccer_epl", "soccer_germany_bundesliga", 
-    "soccer_italy_serie_a", "soccer_spain_la_liga",
-    "tennis_atp", "tennis_wta",
-    "basketball_nba", "basketball_euroleague",
-    "americanfootball_nfl", "icehockey_nhl"
-]
+VIP_SPORTS = ["soccer_uefa_champs_league", "soccer_epl", "soccer_germany_bundesliga", "soccer_italy_serie_a", "soccer_spain_la_liga", "tennis_atp", "tennis_wta", "basketball_nba", "basketball_euroleague"]
 
-# --- EINSTELLUNGEN ---
-st.sidebar.header("⚙️ Ticket-Parameter")
+# --- SIDEBAR ---
+st.sidebar.header("⚙️ Parameter")
 api_key = st.sidebar.text_input("🔑 API Key", type="password")
-
-st.sidebar.markdown("---")
-buchmacher = st.sidebar.radio(
-    "🏦 Ziel-Buchmacher:",
-    ("bet365", "bwin", "unibet", "alle"),
-    format_func=lambda x: {"bet365": "1. Bet365 (Primär)", "bwin": "2. Bwin (Backup)", "unibet": "3. Unibet (Spezialist)", "alle": "🌍 Globaler Mix (Alle ansehen)"}[x]
-)
-
-st.sidebar.markdown("---")
-max_quote = st.sidebar.slider("Maximale Quote", 1.15, 1.50, 1.35, 0.01)
-min_quote = st.sidebar.slider("Minimale Quote", 1.01, 1.25, 1.15, 0.01)
-ticket_groesse = st.sidebar.slider("🎟️ Wunsch-Kombi-Größe", 2, 10, 5, 1)
-
-# --- DER ZEIT-FILTER ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("⏳ Zeit-Filter")
-zeitfenster_stunden = st.sidebar.slider("Max. Zeit bis Anpfiff (Stunden)", 12, 72, 24, 12)
-
-# --- NEU: DIE SCAN-TIEFE ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("🌍 Scan-Tiefe")
-scan_modus = st.sidebar.radio(
-    "Wie tief soll gescannt werden?",
-    ("vip", "alles"),
-    format_func=lambda x: "🛡️ Nur Top-Ligen (ca. 8 Credits)" if x == "vip" else "🔥 Kompletter Weltmarkt (ca. 60 Credits!)"
-)
-
-# --- CREDIT COUNTER ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("API Guthaben (Letzter Stand)")
-col1, col2 = st.sidebar.columns(2)
-col1.metric("Verbraucht", f"{st.session_state.api_used} / 500")
-col2.metric("Übrig", st.session_state.api_remaining)
+buchmacher = st.sidebar.radio("🏦 Buchmacher:", ("bet365", "bwin", "unibet", "alle"))
+max_quote = st.sidebar.slider("Maximale Quote", 1.10, 2.00, 1.40, 0.01)
+min_quote = st.sidebar.slider("Minimale Quote", 1.01, 1.20, 1.10, 0.01)
+ticket_groesse = st.sidebar.slider("🎟️ Kombi-Größe", 2, 10, 5, 1)
+zeitfenster_stunden = st.sidebar.slider("⏳ Max. Stunden bis Start", 6, 72, 24, 6)
+scan_modus = st.sidebar.radio("🌍 Scan-Tiefe", ("vip", "alles"))
 
 # --- ENGINE ---
-def hole_aktive_sports(key, modus):
-    url = f"https://api.the-odds-api.com/v4/sports/?apiKey={key}"
+def hole_daten(url):
     try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            st.session_state.api_used = response.headers.get('x-requests-used', st.session_state.api_used)
-            st.session_state.api_remaining = response.headers.get('x-requests-remaining', st.session_state.api_remaining)
-            daten = response.json()
-            if isinstance(daten, list):
-                alle_aktiven = [sport['key'] for sport in daten if sport.get('active')]
-                # HIER GREIFT DER NEUE SCHALTER
-                if modus == "vip":
-                    return [s for s in VIP_SPORTS if s in alle_aktiven]
-                else:
-                    return alle_aktiven # Gibt ALLE 50+ laufenden Sportarten zurück
-        return []
-    except:
-        return []
+        res = requests.get(url)
+        if res.status_code == 200:
+            st.session_state.api_used = res.headers.get('x-requests-used', st.session_state.api_used)
+            st.session_state.api_remaining = res.headers.get('x-requests-remaining', st.session_state.api_remaining)
+            return res.json()
+    except: pass
+    return []
 
-def scan_sportart(sport, key, bookie):
-    if bookie == "alle":
-        url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?apiKey={key}&regions=eu,uk&markets=h2h,spreads,totals"
-    else:
-        url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?apiKey={key}&regions=eu,uk&bookmakers={bookie}&markets=h2h,spreads,totals"
-    
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            st.session_state.api_used = response.headers.get('x-requests-used', st.session_state.api_used)
-            st.session_state.api_remaining = response.headers.get('x-requests-remaining', st.session_state.api_remaining)
-            daten = response.json()
-            if isinstance(daten, list):
-                return daten
-        return []
-    except:
-        return []
-
-# --- DER MAGISCHE KNOPF ---
-st.markdown("---")
-if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
-    if not api_key:
-        st.error("⚠️ Bitte API-Key links im Menü eintragen!")
+# --- MAIN ---
+if st.button("🚀 DEEP SCAN STARTEN"):
+    if not api_key: st.error("Key fehlt!")
     else:
         jetzt = datetime.now(timezone.utc)
-        max_zeit = jetzt + timedelta(hours=zeitfenster_stunden)
+        limit_zeit = jetzt + timedelta(hours=zeitfenster_stunden)
         
-        with st.spinner("🛰️ Verbinde mit Servern und prüfe aktive Märkte..."):
-            aktive_ligen = hole_aktive_sports(api_key, scan_modus)
-            
-        if not aktive_ligen:
-            st.warning("Aktuell läuft überhaupt nichts. Versuche es später wieder.")
+        # 1. Sportarten holen
+        sport_url = f"https://api.the-odds-api.com/v4/sports/?apiKey={api_key}"
+        alle_sportarten = hole_daten(sport_url)
+        
+        target_list = [s['key'] for s in alle_sportarten if s.get('active')]
+        if scan_modus == "vip":
+            target_list = [s for s in target_list if s in VIP_SPORTS]
+        
+        if not target_list: st.warning("Keine Sportarten gefunden.")
         else:
-            st.info(f"📡 {len(aktive_ligen)} Ligen im ausgewählten Modus gefunden. Starte Deep-Scan...")
+            status = st.empty()
+            bar = st.progress(0)
+            gefundene = []
             
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            gefundene_wetten = []
-            gesehene_wetten_id = set()
-            
-            for index, sport in enumerate(aktive_ligen):
-                status_text.text(f"🔍 Analysiere: {sport.upper()} ... ({index + 1}/{len(aktive_ligen)})")
-                progress_bar.progress((index + 1) / len(aktive_ligen))
+            # Diagnose-Variablen
+            stats = {"zu_spät": 0, "falsche_quote": 0, "kein_markt": 0}
+
+            for i, s_key in enumerate(target_list):
+                status.text(f"Scanne {s_key}... ({i+1}/{len(target_list)})")
+                bar.progress((i+1)/len(target_list))
                 
-                daten = scan_sportart(sport, api_key, buchmacher)
+                # Wir scannen jetzt JEDE Sportart einzeln
+                q_url = f"https://api.the-odds-api.com/v4/sports/{s_key}/odds/?apiKey={api_key}&regions=eu,uk&markets=h2h,totals&bookmakers={'' if buchmacher=='alle' else buchmacher}"
+                events = hole_daten(q_url)
                 
-                for spiel in daten:
-                    startzeit_str = spiel.get('commence_time')
-                    if startzeit_str:
-                        try:
-                            startzeit = datetime.fromisoformat(startzeit_str.replace('Z', '+00:00'))
-                            if startzeit > max_zeit:
-                                continue
-                        except:
-                            pass 
+                for ev in events:
+                    # Zeit-Check
+                    t_str = ev.get('commence_time')
+                    t_obj = datetime.fromisoformat(t_str.replace('Z', '+00:00'))
+                    if t_obj > limit_zeit:
+                        stats["zu_spät"] += 1
+                        continue
                     
-                    if 'bookmakers' not in spiel: continue
-                    team_a = spiel.get('home_team', 'Unbekannt')
-                    team_b = spiel.get('away_team', 'Unbekannt')
-                    spiel_name = f"{team_a} vs {team_b}"
-                    
-                    for bm in spiel['bookmakers']:
-                        if buchmacher != "alle" and bm.get('key') != buchmacher:
-                            continue
-                            
-                        buchmacher_name = bm.get('title', 'Unbekannt')
+                    if not ev.get('bookmakers'): 
+                        stats["kein_markt"] += 1
+                        continue
                         
-                        for markt in bm.get('markets', []):
-                            markt_name = markt['key'].upper() 
-                            
-                            for quote in markt.get('outcomes', []):
-                                if min_quote <= quote['price'] <= max_quote:
-                                    
-                                    tipp_text = f"{quote.get('name', '')} {quote.get('point', '')}".strip()
-                                    einzigartige_id = f"{spiel_name}_{markt_name}_{tipp_text}"
-                                    
-                                    if einzigartige_id not in gesehene_wetten_id:
-                                        if markt_name == "H2H": anzeige_markt = "🏆 Sieger"
-                                        elif markt_name == "SPREADS": anzeige_markt = "⚖️ Handicap"
-                                        elif markt_name == "TOTALS": anzeige_markt = "🎯 Über/Unter"
-                                        else: anzeige_markt = markt_name
-                                        
-                                        anzeige_datum = "Unbekannt"
-                                        if startzeit_str:
-                                            try:
-                                                anzeige_datum = startzeit.strftime("%d.%m. %H:%M")
-                                            except: pass
-                                        
-                                        gefundene_wetten.append({
-                                            "sport": sport.replace('soccer_', '').replace('tennis_', '').replace('basketball_', '').upper(),
-                                            "spiel": spiel_name,
-                                            "zeit": anzeige_datum,
-                                            "markt": anzeige_markt,
-                                            "tipp": tipp_text,
-                                            "quote": quote['price'],
-                                            "bookie_name": buchmacher_name
-                                        })
-                                        gesehene_wetten_id.add(einzigartige_id)
+                    for bm in ev['bookmakers']:
+                        for m in bm.get('markets', []):
+                            for o in m.get('outcomes', []):
+                                price = o.get('price')
+                                if min_quote <= price <= max_quote:
+                                    gefundene.append({
+                                        "name": f"{ev['home_team']} vs {ev['away_team']}",
+                                        "tipp": o['name'],
+                                        "quote": price,
+                                        "zeit": t_obj.strftime("%H:%M"),
+                                        "liga": s_key.upper()
+                                    })
+                                else:
+                                    stats["falsche_quote"] += 1
 
-            status_text.empty()
-            progress_bar.empty()
-            
-            st.success("✅ Analyse erfolgreich abgeschlossen!")
-            
-            if len(gefundene_wetten) > 0:
-                gefundene_wetten = sorted(gefundene_wetten, key=lambda x: x['quote'])
-                top_x = gefundene_wetten[:ticket_groesse]
-                gesamtquote = 1.0
-                
-                st.markdown(f"### 🎫 Dein Ticket ({len(top_x)} Bausteine)")
-                
-                if len(gefundene_wetten) < ticket_groesse:
-                    st.warning(f"Achtung: Du wolltest {ticket_groesse} Spiele, aber für die nächsten {zeitfenster_stunden} Stunden gibt der Markt nur {len(gefundene_wetten)} her.")
-                
-                for i, wette in enumerate(top_x):
-                    bookie_info = f" *(Quelle: {wette['bookie_name']})*" if buchmacher == "alle" else ""
-                    
-                    ticket_text = f"""**Baustein {i+1} ({wette['sport']}) | 🕒 {wette['zeit']} UTC | {wette['markt']}**
-                    
-**{wette['spiel']}**
+            status.empty()
+            bar.empty()
 
-👉 **Tipp:** {wette['tipp']} | **Quote: {wette['quote']}**{bookie_info}"""
-                    
-                    st.info(ticket_text)
-                    gesamtquote *= wette['quote']
-                    
-                st.success(f"🔥 **GESAMTQUOTE (KOMBI): {gesamtquote:.2f}**")
+            if gefundene:
+                gefundene = sorted(gefundene, key=lambda x: x['quote'])
+                st.success(f"{len(gefundene)} Wetten gefunden!")
+                for w in gefundene[:ticket_groesse]:
+                    st.info(f"**{w['liga']}** | {w['zeit']} Uhr\n\n{w['name']}\n\n👉 {w['tipp']} | **{w['quote']}**")
             else:
-                st.error(f"Für die nächsten {zeitfenster_stunden} Stunden absolut keine Spiele in diesem Quotenbereich gefunden.")
+                st.error("Nichts gefunden.")
+                st.write(f"Diagnose: {stats['zu_spät']} Spiele zu weit in der Zukunft, {stats['falsche_quote']} hatten nicht deine Quote.")
