@@ -5,7 +5,7 @@ st.set_page_config(page_title="Magic One-Click Scanner", page_icon="🎱", layou
 st.title("🎱 Magic One-Click Scanner")
 st.markdown("Ein Knopfdruck. Die KI scannt automatisch die größten globalen Sportmärkte nach deinen Vorgaben.")
 
-# --- DIE VIP-LISTE (Schützt dein API-Limit und garantiert hohe Datenqualität) ---
+# --- DIE VIP-LISTE ---
 VIP_SPORTS = [
     "soccer_uefa_champs_league", "soccer_epl", "soccer_germany_bundesliga", 
     "soccer_italy_serie_a", "soccer_spain_la_liga",
@@ -22,6 +22,11 @@ st.sidebar.markdown("**Dein Sweetspot:**")
 max_quote = st.sidebar.slider("Maximale Quote (Risiko-Decke)", 1.15, 1.50, 1.35, 0.01)
 min_quote = st.sidebar.slider("Minimale Quote (Mindest-Ertrag)", 1.01, 1.25, 1.15, 0.01)
 
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Ticket-Größe:**")
+# NEU: Der Regler für die Anzahl der Spiele im Ticket
+ticket_groesse = st.sidebar.slider("🎟️ Anzahl der Spiele (Kombi)", 2, 10, 5, 1)
+
 # --- ENGINE ---
 def hole_aktive_vip_sports(key):
     url = f"https://api.the-odds-api.com/v4/sports/?apiKey={key}"
@@ -29,14 +34,12 @@ def hole_aktive_vip_sports(key):
         response = requests.get(url)
         if response.status_code == 200:
             alle_aktiven = [sport['key'] for sport in response.json() if sport['active']]
-            # Schnittmenge aus VIP-Liste und aktuell laufenden Sportarten
             return [s for s in VIP_SPORTS if s in alle_aktiven]
         return []
     except:
         return []
 
 def scan_sportart(sport, key):
-    # Wir fragen direkt alle drei großen Märkte auf einmal ab!
     url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds/?apiKey={key}&regions=eu&markets=h2h,spreads,totals"
     try:
         response = requests.get(url)
@@ -73,7 +76,7 @@ if st.button("🚀 MAGIC SCAN STARTEN", use_container_width=True):
                         
                         for buchmacher in spiel['bookmakers']:
                             for markt in buchmacher.get('markets', []):
-                                markt_name = markt['key'].upper() # H2H, SPREADS oder TOTALS
+                                markt_name = markt['key'].upper() 
                                 
                                 for quote in markt.get('outcomes', []):
                                     if min_quote <= quote['price'] <= max_quote:
@@ -82,7 +85,6 @@ if st.button("🚀 MAGIC SCAN STARTEN", use_container_width=True):
                                         einzigartige_id = f"{spiel_name}_{markt_name}_{tipp_text}"
                                         
                                         if einzigartige_id not in gesehene_wetten_id:
-                                            # Übersetze die Märkte für die Anzeige
                                             if markt_name == "H2H": anzeige_markt = "🏆 Sieger"
                                             elif markt_name == "SPREADS": anzeige_markt = "⚖️ Handicap"
                                             elif markt_name == "TOTALS": anzeige_markt = "🎯 Über/Unter"
@@ -99,19 +101,21 @@ if st.button("🚀 MAGIC SCAN STARTEN", use_container_width=True):
 
                 st.success("✅ Globale Analyse abgeschlossen!")
                 
-                # --- DAS TICKET ---
-                st.markdown("### 🎫 Dein vollautomatisches Ticket")
-                if len(gefundene_wetten) >= 3:
-                    # Sortieren nach Quote (niedrigste/sicherste zuerst)
+                # --- DAS TICKET (Jetzt dynamisch!) ---
+                st.markdown(f"### 🎫 Dein {ticket_groesse}er-Kombi-Ticket")
+                
+                # NEU: Prüfen, ob wir genug Spiele für die eingestellte Ticket-Größe haben
+                if len(gefundene_wetten) >= ticket_groesse:
                     gefundene_wetten = sorted(gefundene_wetten, key=lambda x: x['quote'])
-                    top_3 = gefundene_wetten[:3]
+                    # NEU: Wir schneiden die Liste genau bei deiner eingestellten Ticket-Größe ab
+                    top_x = gefundene_wetten[:ticket_groesse]
                     gesamtquote = 1.0
                     
-                    for i, wette in enumerate(top_3):
+                    for i, wette in enumerate(top_x):
                         st.info(f"**Baustein {i+1} ({wette['sport']}) | {wette['markt']}**\n\n**{wette['spiel']}**\n\n👉 **Tipp:** {wette['tipp']} | **Quote: {wette['quote']}**")
                         gesamtquote *= wette['quote']
                         
                     st.success(f"🔥 **GESAMTQUOTE (KOMBI): {gesamtquote:.2f}**")
-                    st.markdown("*Baue diese 3 Bausteine jetzt in deiner Wett-App nach.*")
+                    st.markdown(f"*Baue diese {ticket_groesse} Bausteine jetzt in deiner Wett-App nach.*")
                 else:
-                    st.warning("Die Filter waren zu streng. Die Buchmacher geben aktuell keine 3 Spiele in diesem Quoten-Bereich her. Versuche es in ein paar Stunden wieder oder erhöhe die 'Maximale Quote'.")
+                    st.warning(f"Nicht genügend Spiele gefunden. Du wolltest {ticket_groesse} Spiele, aber der Markt gibt in diesem Quoten-Bereich gerade nur {len(gefundene_wetten)} her. Erhöhe die maximale Quote oder verkleinere dein Ticket!")
