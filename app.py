@@ -57,7 +57,6 @@ def hole_aktive_vip_sports(key):
             st.session_state.api_used = response.headers.get('x-requests-used', st.session_state.api_used)
             st.session_state.api_remaining = response.headers.get('x-requests-remaining', st.session_state.api_remaining)
             daten = response.json()
-            # Sicherheits-Check: Ist das Ergebnis wirklich eine Liste?
             if isinstance(daten, list):
                 alle_aktiven = [sport['key'] for sport in daten if sport.get('active')]
                 return [s for s in VIP_SPORTS if s in alle_aktiven]
@@ -100,7 +99,6 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
         else:
             st.info(f"📡 {len(aktive_vips)} globale Ligen online. Starte Deep-Scan...")
             
-            # --- NEU: LIVE-DASHBOARD (LADEBALKEN) ---
             progress_bar = st.progress(0)
             status_text = st.empty()
             
@@ -108,7 +106,6 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
             gesehene_wetten_id = set()
             
             for index, sport in enumerate(aktive_vips):
-                # Update der Live-Anzeige
                 status_text.text(f"🔍 Analysiere: {sport.upper()} ... ({index + 1}/{len(aktive_vips)})")
                 progress_bar.progress((index + 1) / len(aktive_vips))
                 
@@ -153,7 +150,6 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
                                         anzeige_datum = "Unbekannt"
                                         if startzeit_str:
                                             try:
-                                                # Zeit auf unsere Zeitzone (+2h) angleichen (simpel)
                                                 anzeige_datum = startzeit.strftime("%d.%m. %H:%M")
                                             except: pass
                                         
@@ -168,13 +164,11 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
                                         })
                                         gesehene_wetten_id.add(einzigartige_id)
 
-            # Lade-Animationen am Ende entfernen
             status_text.empty()
             progress_bar.empty()
             
             st.success("✅ Analyse erfolgreich abgeschlossen!")
             
-            # --- DAS TICKET ---
             if len(gefundene_wetten) > 0:
                 gefundene_wetten = sorted(gefundene_wetten, key=lambda x: x['quote'])
                 top_x = gefundene_wetten[:ticket_groesse]
@@ -187,4 +181,17 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
                 
                 for i, wette in enumerate(top_x):
                     bookie_info = f" *(Quelle: {wette['bookie_name']})*" if buchmacher == "alle" else ""
-                    st.info(f"**Baustein {i+1} ({wette['sport']}) | 🕒 {wette['zeit']} UTC | {wette['markt']}**\n\n**{wette['spiel']}**\n\n
+                    
+                    # BUGFIX: Robuster Multiline-String für das Ticket
+                    ticket_text = f"""**Baustein {i+1} ({wette['sport']}) | 🕒 {wette['zeit']} UTC | {wette['markt']}**
+                    
+**{wette['spiel']}**
+
+👉 **Tipp:** {wette['tipp']} | **Quote: {wette['quote']}**{bookie_info}"""
+                    
+                    st.info(ticket_text)
+                    gesamtquote *= wette['quote']
+                    
+                st.success(f"🔥 **GESAMTQUOTE (KOMBI): {gesamtquote:.2f}**")
+            else:
+                st.error(f"Für die nächsten {zeitfenster_stunden} Stunden absolut keine Spiele in diesem Quotenbereich gefunden.")
