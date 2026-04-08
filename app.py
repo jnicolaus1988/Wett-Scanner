@@ -39,7 +39,16 @@ ticket_groesse = st.sidebar.slider("🎟️ Wunsch-Kombi-Größe", 2, 10, 5, 1)
 # --- DER ZEIT-FILTER ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("⏳ Zeit-Filter")
-zeitfenster_stunden = st.sidebar.slider("Max. Zeit bis Anpfiff (Stunden)", 12, 72, 24, 12, help="Filtert Spiele heraus, die zu weit in der Zukunft liegen.")
+zeitfenster_stunden = st.sidebar.slider("Max. Zeit bis Anpfiff (Stunden)", 12, 72, 24, 12)
+
+# --- NEU: DIE SCAN-TIEFE ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("🌍 Scan-Tiefe")
+scan_modus = st.sidebar.radio(
+    "Wie tief soll gescannt werden?",
+    ("vip", "alles"),
+    format_func=lambda x: "🛡️ Nur Top-Ligen (ca. 8 Credits)" if x == "vip" else "🔥 Kompletter Weltmarkt (ca. 60 Credits!)"
+)
 
 # --- CREDIT COUNTER ---
 st.sidebar.markdown("---")
@@ -49,7 +58,7 @@ col1.metric("Verbraucht", f"{st.session_state.api_used} / 500")
 col2.metric("Übrig", st.session_state.api_remaining)
 
 # --- ENGINE ---
-def hole_aktive_vip_sports(key):
+def hole_aktive_sports(key, modus):
     url = f"https://api.the-odds-api.com/v4/sports/?apiKey={key}"
     try:
         response = requests.get(url)
@@ -59,7 +68,11 @@ def hole_aktive_vip_sports(key):
             daten = response.json()
             if isinstance(daten, list):
                 alle_aktiven = [sport['key'] for sport in daten if sport.get('active')]
-                return [s for s in VIP_SPORTS if s in alle_aktiven]
+                # HIER GREIFT DER NEUE SCHALTER
+                if modus == "vip":
+                    return [s for s in VIP_SPORTS if s in alle_aktiven]
+                else:
+                    return alle_aktiven # Gibt ALLE 50+ laufenden Sportarten zurück
         return []
     except:
         return []
@@ -92,12 +105,12 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
         max_zeit = jetzt + timedelta(hours=zeitfenster_stunden)
         
         with st.spinner("🛰️ Verbinde mit Servern und prüfe aktive Märkte..."):
-            aktive_vips = hole_aktive_vip_sports(api_key)
+            aktive_ligen = hole_aktive_sports(api_key, scan_modus)
             
-        if not aktive_vips:
-            st.warning("Aktuell läuft keiner der globalen Top-Märkte. Versuche es später wieder.")
+        if not aktive_ligen:
+            st.warning("Aktuell läuft überhaupt nichts. Versuche es später wieder.")
         else:
-            st.info(f"📡 {len(aktive_vips)} globale Ligen online. Starte Deep-Scan...")
+            st.info(f"📡 {len(aktive_ligen)} Ligen im ausgewählten Modus gefunden. Starte Deep-Scan...")
             
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -105,9 +118,9 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
             gefundene_wetten = []
             gesehene_wetten_id = set()
             
-            for index, sport in enumerate(aktive_vips):
-                status_text.text(f"🔍 Analysiere: {sport.upper()} ... ({index + 1}/{len(aktive_vips)})")
-                progress_bar.progress((index + 1) / len(aktive_vips))
+            for index, sport in enumerate(aktive_ligen):
+                status_text.text(f"🔍 Analysiere: {sport.upper()} ... ({index + 1}/{len(aktive_ligen)})")
+                progress_bar.progress((index + 1) / len(aktive_ligen))
                 
                 daten = scan_sportart(sport, api_key, buchmacher)
                 
@@ -182,7 +195,6 @@ if st.button(f"🚀 SCAN STARTEN", use_container_width=True):
                 for i, wette in enumerate(top_x):
                     bookie_info = f" *(Quelle: {wette['bookie_name']})*" if buchmacher == "alle" else ""
                     
-                    # BUGFIX: Robuster Multiline-String für das Ticket
                     ticket_text = f"""**Baustein {i+1} ({wette['sport']}) | 🕒 {wette['zeit']} UTC | {wette['markt']}**
                     
 **{wette['spiel']}**
